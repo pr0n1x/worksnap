@@ -1,7 +1,7 @@
 # worksnap
 
-Incremental tar snapshots of the work directory. A Rust reimplementation of
-the original `work-snapshot.sh` (kept in this repo for reference).
+Incremental tar snapshots of a work directory, built on GNU tar's
+`--listed-incremental` mode.
 
 ## How it works
 
@@ -123,9 +123,21 @@ tar -xzpf 2026-08-12-1200.based-on-2026-08-10-0900.tar.gz --listed-incremental=/
 `--listed-incremental` on extraction makes tar replay deletions too: files
 removed between snapshots are removed from the restored tree.
 
+## Installation
+
+```sh
+cargo install worksnap          # from crates.io
+just install                    # from a checkout (cargo install --path .)
+```
+
 ## Development
 
 ```sh
 just p    # prepare: cargo check + clippy -D warnings + fmt --check + machete + test
 just t    # tests only
 ```
+
+## License
+
+Licensed under either of [Apache License, Version 2.0](LICENSE-APACHE) or
+[MIT license](LICENSE-MIT) at your option.

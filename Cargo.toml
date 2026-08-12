@@ -1,8 +1,15 @@
 [package]
 name = "worksnap"
-version = "1.0.0"
+version = "1.0.1"
 edition = "2024"
-description = "Incremental tar snapshots of the work directory"
+rust-version = "1.87"
+description = "Incremental tar snapshots of a work directory, built on GNU tar's --listed-incremental mode"
+authors = ["Maksim Makarov aka pr0n1x <maxim.pronix@gmail.com>"]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/pr0n1x/worksnap"
+readme = "README.md"
+keywords = ["backup", "tar", "incremental", "snapshot", "archive"]
+categories = ["command-line-utilities", "filesystem"]
 
 [dependencies]
 chrono = "0.4"

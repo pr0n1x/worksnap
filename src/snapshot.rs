@@ -80,7 +80,7 @@ fn report_archive(archive: &Path) {
     }
 }
 
-/// Binary units, matching the `ls -lh` report the shell version printed.
+/// Binary units for the human-readable archive size report.
 const SIZE_UNITS: &[&str] = &["B", "KiB", "MiB", "GiB", "TiB"];
 const SIZE_UNIT_STEP: f64 = 1024.0;
 
