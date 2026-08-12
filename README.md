@@ -59,6 +59,23 @@ anything. To keep a directory out of snapshots, drop an empty
 touch some/huge/dir/.worksnap-ignore-dir
 ```
 
+### `.worksnap-ignore` files
+
+For finer-grained control any directory may contain a `.worksnap-ignore`
+file. Every non-blank line that doesn't start with `#` is a tar exclusion
+glob, scoped to the directory the file lives in (a leading `/` is allowed
+and means the same thing). The glob flavor is exactly what GNU tar uses for
+`--exclude`: wildcards are on and `*` also matches `/`, so a pattern
+reaches any depth below the directory.
+
+```sh
+# proj/.worksnap-ignore
+*.log             # excludes proj/deep.log and proj/logs/a.log alike
+data/*.bin        # excludes proj/data/*.bin, keeps everything else in data/
+```
+
+The ignore file itself is archived, so a restored tree keeps its rules.
+
 ## Configuration
 
 Both directories are required and have no defaults. Set them via flags

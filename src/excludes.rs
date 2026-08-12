@@ -19,6 +19,11 @@ const STATIC_COMMON_PATTERNS: &[&str] = &[
 
 /// Marker file: a directory containing it is left out of snapshots entirely.
 const IGNORE_MARKER: &str = ".worksnap-ignore-dir";
+/// Per-directory ignore file: every non-blank, non-`#` line is a tar
+/// exclusion glob, scoped to the directory the file lives in. The glob
+/// flavor is exactly tar's `--exclude` default (wildcards on, `*` matches
+/// `/` too); lines are passed through verbatim apart from the scoping prefix.
+const IGNORE_FILE: &str = ".worksnap-ignore";
 /// A `target` directory is a Cargo build artifact only when this manifest
 /// sits next to it.
 const CARGO_MANIFEST: &str = "Cargo.toml";
@@ -73,12 +78,15 @@ fn detect_project_excludes(source_dir: &Path, common_patterns: &[String]) -> Vec
                 continue;
             }
         };
-        // The root itself can't be excluded; everything else of interest
-        // is a directory.
-        if entry.depth() == 0 || !entry.file_type().is_dir() {
+        if !entry.file_type().is_dir() {
             continue;
         }
         let path = entry.path();
+        collect_ignore_file(source_dir, path, &mut patterns);
+        // The root itself can't be excluded, only scan it for an ignore file.
+        if entry.depth() == 0 {
+            continue;
+        }
         if is_excluded_project_dir(path) {
             match path.strip_prefix(source_dir) {
                 Ok(rel) => {
@@ -97,6 +105,54 @@ fn detect_project_excludes(source_dir: &Path, common_patterns: &[String]) -> Vec
             // Excluded wholesale by a common pattern; nothing inside can
             // contribute new excludes, so don't waste time walking it.
             walker.skip_current_dir();
+        }
+    }
+    patterns
+}
+
+fn collect_ignore_file(source_dir: &Path, dir: &Path, patterns: &mut Vec<OsString>) {
+    let ignore_file = dir.join(IGNORE_FILE);
+    if !ignore_file.is_file() {
+        return;
+    }
+    let content = match std::fs::read_to_string(&ignore_file) {
+        Ok(content) => content,
+        Err(error) => {
+            tracing::warn!(%error, "cannot read {}", ignore_file.display());
+            return;
+        }
+    };
+    let Ok(Some(rel_dir)) = dir.strip_prefix(source_dir).map(Path::to_str) else {
+        tracing::warn!(
+            path = %dir.display(),
+            "skipping the ignore file: cannot express its dir relative to the source dir"
+        );
+        return;
+    };
+    patterns.extend(
+        scoped_patterns(rel_dir, &content)
+            .into_iter()
+            .map(OsString::from),
+    );
+}
+
+/// Turns the lines of an ignore file into tar exclusion globs anchored at
+/// `rel_dir` (the file's directory relative to the source root, `""` for
+/// the root itself).
+fn scoped_patterns(rel_dir: &str, content: &str) -> Vec<String> {
+    let mut patterns = Vec::new();
+    for line in content.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        // A leading slash is dropped: the line is already scoped to the
+        // ignore file's directory, so `/build` and `build` mean the same.
+        let glob = line.trim_start_matches('/');
+        if rel_dir.is_empty() {
+            patterns.push(format!("./{glob}"));
+        } else {
+            patterns.push(format!("./{rel_dir}/{glob}"));
         }
     }
     patterns
@@ -128,4 +184,33 @@ fn is_covered_by_common(source_dir: &Path, path: &Path, patterns: &[String]) -> 
             !pattern.contains('*') && path.file_name() == Some(OsStr::new(pattern))
         }
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn scoped_patterns_prefix_globs_with_the_ignore_file_dir() {
+        let content = "target2\n*.log\nworkdir/dumps/*.bin\n";
+        assert_eq!(
+            scoped_patterns("proj/sub", content),
+            vec![
+                "./proj/sub/target2",
+                "./proj/sub/*.log",
+                "./proj/sub/workdir/dumps/*.bin",
+            ]
+        );
+    }
+
+    #[test]
+    fn scoped_patterns_at_the_source_root_anchor_to_dot() {
+        assert_eq!(scoped_patterns("", "big-dir\n"), vec!["./big-dir"]);
+    }
+
+    #[test]
+    fn scoped_patterns_skip_blanks_and_comments_and_drop_leading_slash() {
+        let content = "\n# a comment\n  \n/build\n";
+        assert_eq!(scoped_patterns("proj", content), vec!["./proj/build"]);
+    }
 }
