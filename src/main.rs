@@ -11,6 +11,9 @@ use crate::storage::Storage;
 
 const ENV_SOURCE_DIR: &str = "WORKSNAP_SOURCE_DIR";
 const ENV_STORAGE_DIR: &str = "WORKSNAP_STORAGE_DIR";
+/// The example source-root ignore policy, shipped inside the binary so
+/// `show-ignore-example` works without a repo checkout.
+const IGNORE_EXAMPLE: &str = include_str!("../worksnap-ignore.example");
 
 /// Incremental tar snapshots of the work directory.
 #[derive(Parser)]
@@ -18,11 +21,11 @@ const ENV_STORAGE_DIR: &str = "WORKSNAP_STORAGE_DIR";
 struct Cli {
     /// Directory whose contents are snapshotted
     #[arg(long, env = ENV_SOURCE_DIR, value_parser = parse_dir, value_name = "DIR")]
-    source_dir: PathBuf,
+    source_dir: Option<PathBuf>,
 
     /// Directory keeping the archives and their .snar listings
     #[arg(long, env = ENV_STORAGE_DIR, value_parser = parse_dir, value_name = "DIR")]
-    storage_dir: PathBuf,
+    storage_dir: Option<PathBuf>,
 
     #[command(subcommand)]
     command: Option<Command>,
@@ -53,6 +56,8 @@ enum Command {
     },
     /// Print the tar exclude patterns computed for the source dir
     ShowIgnores,
+    /// Print the built-in example of a source-root .worksnap-ignore
+    ShowIgnoreExample,
 }
 
 #[derive(Clone)]
@@ -90,6 +95,12 @@ fn parse_base(text: &str) -> Result<BaseSpec, String> {
     }
 }
 
+/// Unwraps a directory option for the commands that can't run without it;
+/// `show-ignore-example` works with neither dir configured.
+fn require_dir(dir: Option<PathBuf>, flag: &str, env: &str) -> eyre::Result<PathBuf> {
+    dir.ok_or_else(|| eyre::eyre!("{flag} is required (or set the {env} env var)"))
+}
+
 fn main() -> eyre::Result<()> {
     tracing_subscriber::fmt()
         .with_max_level(tracing::Level::INFO)
@@ -97,21 +108,25 @@ fn main() -> eyre::Result<()> {
         .with_writer(std::io::stderr)
         .init();
     let cli = Cli::parse();
-    let storage = Storage::new(cli.storage_dir);
+    let source_dir = || require_dir(cli.source_dir, "--source-dir", ENV_SOURCE_DIR);
+    let storage =
+        || require_dir(cli.storage_dir, "--storage-dir", ENV_STORAGE_DIR).map(Storage::new);
     let default_command = Command::Incremental {
         base: BaseSpec::Last,
     };
     match cli.command.unwrap_or(default_command) {
         Command::Incremental { base } => {
+            let storage = storage()?;
             let base = match base {
                 BaseSpec::Last => storage.find_last_base()?,
                 BaseSpec::LastFull => storage.find_last_full_base()?,
                 BaseSpec::Timestamp(timestamp) => timestamp,
             };
-            snapshot::create_incremental(&cli.source_dir, &storage, &base)
+            snapshot::create_incremental(&source_dir()?, &storage, &base)
         }
-        Command::Full => snapshot::create_full(&cli.source_dir, &storage),
+        Command::Full => snapshot::create_full(&source_dir()?, &storage()?),
         Command::Find { target } => {
+            let storage = storage()?;
             let timestamp = match target {
                 FindTarget::Last => storage.find_last_base()?,
                 FindTarget::Full => storage.find_last_full_base()?,
@@ -120,9 +135,13 @@ fn main() -> eyre::Result<()> {
             Ok(())
         }
         Command::ShowIgnores => {
-            for pattern in excludes::patterns(&cli.source_dir) {
+            for pattern in excludes::patterns(&source_dir()?) {
                 println!("{}", pattern.display());
             }
+            Ok(())
+        }
+        Command::ShowIgnoreExample => {
+            print!("{IGNORE_EXAMPLE}");
             Ok(())
         }
     }

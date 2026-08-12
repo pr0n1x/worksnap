@@ -1,0 +1,30 @@
+# worksnap exclusions for the whole work tree.
+# A bare glob matches anywhere below this directory; a leading "/" pins it
+# to this directory only. Tar glob flavor: `*` also matches `/`.
+# Conditional rules: [<dir-glob>:]<marker>:<path-to-ignore> — in every dir
+# matching <dir-glob> (this dir if omitted) where <marker> exists,
+# <path-to-ignore> is ignored ("." means the matched dir itself).
+
+
+# Build artifacts of Rust and PHP projects
+*/:Cargo.toml:target/
+*/:composer.json:vendor/
+*/:requirements.txt:out/
+*/:uv.lock:out/
+
+# Dependency and package caches
+node_modules
+.venv
+.pnpm-store
+
+# Language-level caches pinned to the work root
+/go/pkg
+/go/bin
+/.cache/uv
+
+# Profiler dumps
+dhat.out.*
+heaptrack.*
+
+# Mounted-filesystem trash of the current user (<uid> expands to the uid)
+.Trash-<uid>

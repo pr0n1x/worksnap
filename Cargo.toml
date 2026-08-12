@@ -1,6 +1,6 @@
 [package]
 name = "worksnap"
-version = "1.0.1"
+version = "1.1.0"
 edition = "2024"
 rust-version = "1.87"
 description = "Incremental tar snapshots of a work directory, built on GNU tar's --listed-incremental mode"

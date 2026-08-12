@@ -36,45 +36,73 @@ Tar runs with `--one-file-system` (nested mounts are not descended into) and
 
 ### What gets excluded
 
-Before every run the source tree is walked once and per-project build
-artifacts are excluded:
+Before every run the source tree is walked once, collecting exclusions.
+Only one thing is built in: any directory containing a
+`.worksnap-ignore-dir` marker file is left out of snapshots entirely
+(`touch some/huge/dir/.worksnap-ignore-dir`).
 
-| Excluded directory | Condition |
-|---|---|
-| `target/` | a `Cargo.toml` sits next to it |
-| `vendor/` | a `composer.json` sits next to it |
-| `.anchor/expanded-macros/expand-target/` | always (Anchor macro-expansion output) |
-| any directory | it contains a `.worksnap-ignore-dir` marker file |
-
-On top of that a static list is always excluded: `node_modules`, `.venv`,
-`.pnpm-store`, `test-ledger` (anywhere in the tree), `go/pkg` and
-`.cache/uv` (relative to the source root), `dhat.out.*` / `heaptrack.*`
-profiler dumps, and the `.Trash-<uid>` directory.
-
-`worksnap show-ignores` prints the full computed list without archiving
-anything. To keep a directory out of snapshots, drop an empty
-`.worksnap-ignore-dir` file into it:
+Everything else — build artifacts, dependency caches, the trash dir,
+whatever your tree accumulates — is policy, not mechanism, and belongs in
+`.worksnap-ignore` files, typically one at the source root.
+[worksnap-ignore.example](./worksnap-ignore.example) is a ready-made
+starting point, shipped inside the binary:
+`worksnap show-ignore-example > .worksnap-ignore`.
 
 ```sh
-touch some/huge/dir/.worksnap-ignore-dir
+# <source-root>/.worksnap-ignore
+*/:Cargo.toml:target/     # every dir with a Cargo.toml: ignore its target/
+*/:composer.json:vendor/  # every dir with a composer.json: ignore its vendor/
+node_modules              # a bare glob matches anywhere below this directory
+.Trash-<uid>              # <uid>/<gid> expand to the current user's ids
+/go/pkg                   # a leading / pins the glob to this directory only
 ```
+
+`worksnap show-ignores` prints the full computed exclude list — built-ins,
+globs, and fired rules — without archiving anything.
 
 ### `.worksnap-ignore` files
 
 For finer-grained control any directory may contain a `.worksnap-ignore`
 file. Every non-blank line that doesn't start with `#` is a tar exclusion
-glob, scoped to the directory the file lives in (a leading `/` is allowed
-and means the same thing). The glob flavor is exactly what GNU tar uses for
-`--exclude`: wildcards are on and `*` also matches `/`, so a pattern
-reaches any depth below the directory.
+glob (the flavor of GNU tar's `--exclude`: wildcards on, `*` also matches
+`/`), scoped to the directory the file lives in:
+
+- a **bare glob** matches anywhere below that directory, like tar's own
+  unanchored patterns;
+- a glob with a **leading `/`** is pinned to that directory only.
 
 ```sh
 # proj/.worksnap-ignore
-*.log             # excludes proj/deep.log and proj/logs/a.log alike
-data/*.bin        # excludes proj/data/*.bin, keeps everything else in data/
+*.log             # proj/deep.log and proj/logs/a.log alike
+/data/*.bin       # proj/data/*.bin only, not proj/x/data/*.bin
 ```
 
 The ignore file itself is archived, so a restored tree keeps its rules.
+
+Besides plain globs, an ignore file may contain **conditional rules**:
+
+```
+[<dir-glob>:]<marker>:<path-to-ignore>
+```
+
+During the pre-snapshot scan, every directory matching `<dir-glob>` (same
+tar-glob flavor, scoped to the ignore file's directory; when omitted, the
+ignore file's directory itself) whose `<marker>` path exists gets
+`<path-to-ignore>` excluded, resolved relative to that directory; `.` means
+the matched directory itself. A rule tests only that `<marker>` exists;
+`<path-to-ignore>` is excluded whether it exists yet, so a project's
+build artifacts are already covered when the first build creates them:
+
+```sh
+Cargo.toml:target/        # this very dir: if Cargo.toml exists, ignore target/
+*/:.git:.                 # ignore every git checkout entirely
+*/a/b/:c/file.txt:d/      # if any */a/b/c/file.txt exists, ignore that */a/b/d
+```
+
+Anything after ` #` (space and hash) on a line is an inline comment. The
+literal tokens `<uid>` and `<gid>` in any line expand to the current
+user's uid and gid before parsing — the mounted-filesystem trash dir, for
+one, is named `.Trash-<uid>`.
 
 ## Configuration
 
@@ -99,6 +127,7 @@ worksnap inc --base 2026-08-03-1400   # incremental on an explicit base
 worksnap find last                # print the newest snapshot's timestamp
 worksnap find full                # print the newest full snapshot's timestamp
 worksnap show-ignores             # print the computed exclude patterns
+worksnap show-ignore-example      # print the built-in example .worksnap-ignore
 ```
 
 `--base` (alias `--from`, short `-b`) accepts `last`, `last-full` (or its
