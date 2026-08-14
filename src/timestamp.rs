@@ -55,7 +55,7 @@ mod tests {
     #[test]
     fn extracts_leading_timestamp_from_incremental_snar_name() {
         assert_eq!(
-            leading("2026-01-01-1800.based-on-2025-12-31-0200.snar"),
+            leading("2026-01-01-1800.2025-12-31-0200.snar"),
             Some("2026-01-01-1800")
         );
         assert_eq!(leading("notes.txt"), None);

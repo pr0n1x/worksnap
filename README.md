@@ -17,14 +17,14 @@ The stem encodes the snapshot's place in the chain:
 
 - **Full snapshot** — `2026-08-03-1400.tar.gz`. Created from scratch with a
   fresh `.snar`; contains everything (minus the excludes below).
-- **Incremental snapshot** — `2026-08-12-1200.based-on-2026-08-03-1400.tar.gz`.
+- **Incremental snapshot** — `2026-08-12-1200.2026-08-03-1400.tar.gz`.
   Contains only what changed since the *base* snapshot. The base's `.snar` is
   copied to the new stem first, and tar updates the copy in place, so the new
   snapshot immediately becomes a valid base for the next increment.
 
 Incrementals chain: a base may itself be incremental, so a typical history
-looks like `full ← inc ← inc ← …`, with each link named after its
-predecessor via `.based-on-<timestamp>`.
+looks like `full ← inc ← inc ← …`, with each link carrying its
+predecessor's timestamp after its own: `<timestamp>.<base-timestamp>`.
 
 Timestamps are `YYYY-MM-DD-HHMM`, chosen so lexicographic order equals
 chronological order — "the last snapshot" is simply the greatest file name.
@@ -139,14 +139,14 @@ quiet and just reports the resulting archive and its size.
 
 ## Restoring
 
-Extract the full snapshot first, then every incremental along the
-`.based-on-` chain in chronological order, each with an empty listing:
+Extract the full snapshot first, then every incremental along the base
+chain in chronological order, each with an empty listing:
 
 ```sh
 cd /restore/here
 tar -xzpf 2026-08-03-1400.tar.gz --listed-incremental=/dev/null
-tar -xzpf 2026-08-10-0900.based-on-2026-08-03-1400.tar.gz --listed-incremental=/dev/null
-tar -xzpf 2026-08-12-1200.based-on-2026-08-10-0900.tar.gz --listed-incremental=/dev/null
+tar -xzpf 2026-08-10-0900.2026-08-03-1400.tar.gz --listed-incremental=/dev/null
+tar -xzpf 2026-08-12-1200.2026-08-10-0900.tar.gz --listed-incremental=/dev/null
 ```
 
 `--listed-incremental` on extraction makes tar replay deletions too: files

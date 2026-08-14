@@ -8,13 +8,11 @@ use crate::timestamp;
 const SNAR_EXT: &str = ".snar";
 /// Extension of the archives themselves.
 const ARCHIVE_EXT: &str = ".tar.gz";
-/// Infix separating an incremental snapshot's own timestamp from the
-/// timestamp of the snapshot it is based on.
-const BASED_ON_INFIX: &str = ".based-on-";
 
 /// The flat directory holding archives (`<stem>.tar.gz`) next to their snar
 /// listings (`<stem>.snar`). A stem is either a bare timestamp (full
-/// snapshot) or `<timestamp>.based-on-<base-timestamp>` (incremental).
+/// snapshot) or `<timestamp>.<base-timestamp>` (incremental, based on the
+/// snapshot named by the second timestamp).
 pub struct Storage {
     dir: PathBuf,
 }
@@ -30,10 +28,6 @@ impl Storage {
 
     pub fn archive_path(&self, stem: &str) -> PathBuf {
         self.dir.join(format!("{stem}{ARCHIVE_EXT}"))
-    }
-
-    pub fn incremental_stem(timestamp: &str, base: &str) -> String {
-        format!("{timestamp}{BASED_ON_INFIX}{base}")
     }
 
     /// Timestamp of the most recent snapshot of any kind, full or incremental.
@@ -64,8 +58,9 @@ impl Storage {
     }
 
     /// The newest snar file whose name starts with the given timestamp.
-    /// A bare `<timestamp>.snar` wins over `<timestamp>.based-on-…` copies
-    /// because it sorts after them.
+    /// An incremental `<timestamp>.<base>.snar` copy wins over the bare
+    /// `<timestamp>.snar`: same-minute snapshots tie on timestamp, and the
+    /// incremental is the fresher of the two.
     pub fn find_snar_by_timestamp(&self, base: &str) -> eyre::Result<PathBuf> {
         let names = self.file_names()?;
         let name = last_snar_starting_with(&names, base).ok_or_else(|| {
@@ -111,10 +106,13 @@ fn last_full_archive_stem(names: &[String]) -> Option<&str> {
 }
 
 fn last_snar_starting_with<'a>(names: &'a [String], base: &str) -> Option<&'a str> {
+    // The bare `<base>.snar` sorts after every `<base>.<timestamp>.snar`
+    // (`s` > digit), so demote it explicitly to prefer incremental copies.
+    let bare = format!("{base}{SNAR_EXT}");
     names
         .iter()
         .filter(|name| name.starts_with(base) && name.ends_with(SNAR_EXT))
-        .max()
+        .max_by_key(|name| (**name != bare, name.as_str()))
         .map(String::as_str)
 }
 
@@ -130,8 +128,8 @@ mod tests {
     fn last_base_is_the_newest_snar_of_any_kind() {
         let names = names(&[
             "2026-01-01-1800.snar",
-            "2026-01-02-0900.based-on-2026-01-01-1800.snar",
-            "2026-01-02-0900.based-on-2026-01-01-1800.tar.gz",
+            "2026-01-02-0900.2026-01-01-1800.snar",
+            "2026-01-02-0900.2026-01-01-1800.tar.gz",
             "junk.snar",
         ]);
         assert_eq!(last_snar_timestamp(&names), Some("2026-01-02-0900"));
@@ -141,21 +139,21 @@ mod tests {
     fn last_full_ignores_incremental_archives_and_junk() {
         let names = names(&[
             "2026-01-01-1800.tar.gz",
-            "2026-01-02-0900.based-on-2026-01-01-1800.tar.gz",
+            "2026-01-02-0900.2026-01-01-1800.tar.gz",
             "zzz-not-a-timestamp.tar.gz",
         ]);
         assert_eq!(last_full_archive_stem(&names), Some("2026-01-01-1800"));
     }
 
     #[test]
-    fn snar_lookup_prefers_the_bare_snar_over_based_on_copies() {
+    fn snar_lookup_prefers_the_incremental_copy_over_the_bare_snar() {
         let names = names(&[
-            "2026-01-01-1800.based-on-2025-12-31-0200.snar",
+            "2026-01-01-1800.2025-12-31-0200.snar",
             "2026-01-01-1800.snar",
         ]);
         assert_eq!(
             last_snar_starting_with(&names, "2026-01-01-1800"),
-            Some("2026-01-01-1800.snar")
+            Some("2026-01-01-1800.2025-12-31-0200.snar")
         );
     }
 }

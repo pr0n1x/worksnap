@@ -26,7 +26,7 @@ pub fn create_full(source_dir: &Path, storage: &Storage) -> eyre::Result<()> {
 
 pub fn create_incremental(source_dir: &Path, storage: &Storage, base: &str) -> eyre::Result<()> {
     let base_snar = storage.find_snar_by_timestamp(base)?;
-    let stem = Storage::incremental_stem(&timestamp::now(), base);
+    let stem = format!("{}.{base}", timestamp::now());
     let snar = storage.snar_path(&stem);
     // tar updates the listing in place, so the base listing is copied first:
     // the copy is both the "previous state" input and the new snapshot's snar.
